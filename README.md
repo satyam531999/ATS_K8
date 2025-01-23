@@ -104,7 +104,7 @@ kubectl get nodes
 3. **Access Prometheus** by port-forwarding:
 
    ```bash
-   kubectl port-forward svc/prometheus-kube-prometheus-prometheus 9090:9090
+   kubectl port-forward svc/prometheus 9090:9090 -n monitoring
    ```
 
    Visit `http://localhost:9090` to access Prometheus.

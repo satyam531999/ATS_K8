@@ -1,0 +1,65 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches:
+      - master # Trigger this workflow when changes are pushed to the main branch
+  pull_request:
+    branches:
+      - master
+
+jobs:
+  build:
+    runs-on: ubuntu-latest # The environment to run the build job
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2 # This action checks out your repository
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v1 # Set up Docker Buildx to build images
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v2 # Log in to Docker Hub
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }} # Use secret for your Docker Hub username
+          password: ${{ secrets.DOCKER_PASSWORD }} # Use secret for your Docker Hub password
+
+      - name: Build Docker image
+        run: |
+          docker build -t ${{ secrets.DOCKER_USERNAME }}/web-app:$GITHUB_SHA .
+          docker tag ${{ secrets.DOCKER_USERNAME }}/web-app:$GITHUB_SHA ${{ secrets.DOCKER_USERNAME }}/web-app:latest  # Tag with 'latest'
+
+      - name: Push Docker image
+        run: |
+          docker push ${{ secrets.DOCKER_USERNAME }}/web-app:$GITHUB_SHA  # Push image with commit hash tag
+          docker push ${{ secrets.DOCKER_USERNAME }}/web-app:latest  # Push image with 'latest' tag
+
+  deploy:
+    runs-on: ubuntu-latest
+    needs: build # This ensures that deployment happens after the build
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2 # Checkout code for deployment
+
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v1 # Set up kubectl to interact with Kubernetes
+        with:
+          version: "latest"
+
+      - name: Set up AWS credentials
+        uses: aws-actions/configure-aws-credentials@v1 # Set up AWS credentials to interact with EKS
+        with:
+          aws_access_key_id: ${{ secrets.AWS_ACCESS_KEY_ID }} # Use secret for AWS access key
+          aws_secret_access_key: ${{ secrets.AWS_SECRET_ACCESS_KEY }} # Use secret for AWS secret key
+          aws_region: "us-east-1" # Region for your AWS EKS cluster
+
+      - name: Update kubeconfig for EKS
+        run: |
+          aws eks --region us-east-1 update-kubeconfig --name ${{ secrets.EKS_CLUSTER_NAME }}  # Get kubeconfig for EKS
+
+      - name: Deploy to Kubernetes
+        run: |
+          kubectl set image deployment/web-app-deployment web-app=${{ secrets.DOCKER_USERNAME }}/web-app:$GITHUB_SHA  # Update Kubernetes deployment with the new image
+          kubectl rollout status deployment/web-app-deployment  # Check deployment status
